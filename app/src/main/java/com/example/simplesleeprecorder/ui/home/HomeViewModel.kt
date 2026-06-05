@@ -112,6 +112,14 @@ class HomeViewModel(
         app.startService(intent)
     }
 
+    fun snooze(minutes: Int) {
+        val intent = Intent(app, SleepTrackingService::class.java).apply {
+            action = SleepTrackingService.ACTION_SNOOZE
+            putExtra(SleepTrackingService.EXTRA_SNOOZE_MINUTES, minutes)
+        }
+        app.startService(intent)
+    }
+
     fun cancelTracking() {
         val intent = Intent(app, SleepTrackingService::class.java).apply {
             action = SleepTrackingService.ACTION_CANCEL

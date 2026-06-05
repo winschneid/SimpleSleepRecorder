@@ -35,11 +35,13 @@ class SleepTrackingService : Service(), SensorEventListener {
     companion object {
         const val ACTION_START = "ACTION_START"
         const val ACTION_STOP_ALARM = "ACTION_STOP_ALARM"
+        const val ACTION_SNOOZE = "ACTION_SNOOZE"
         const val ACTION_CANCEL = "ACTION_CANCEL"
         const val ACTION_ALARM_TRIGGERED = "ACTION_ALARM_TRIGGERED"
 
         const val EXTRA_ALARM_TIME = "EXTRA_ALARM_TIME"
         const val EXTRA_AUDIO_URI = "EXTRA_AUDIO_URI"
+        const val EXTRA_SNOOZE_MINUTES = "EXTRA_SNOOZE_MINUTES"
 
         const val CHANNEL_ID_TRACKING = "SLEEP_TRACKING"
         const val CHANNEL_ID_ALARM = "SLEEP_ALARM"
@@ -98,6 +100,10 @@ class SleepTrackingService : Service(), SensorEventListener {
             }
             ACTION_ALARM_TRIGGERED -> handleAlarmTriggered()
             ACTION_STOP_ALARM -> handleStopAlarm()
+            ACTION_SNOOZE -> {
+                val minutes = intent.getIntExtra(EXTRA_SNOOZE_MINUTES, 5)
+                handleSnooze(minutes)
+            }
             ACTION_CANCEL -> handleCancel()
         }
         return START_STICKY
@@ -140,6 +146,15 @@ class SleepTrackingService : Service(), SensorEventListener {
     private fun handleStopAlarm() {
         stopAlarmMedia()
         finishSession()
+    }
+
+    private fun handleSnooze(minutes: Int) {
+        stopAlarmMedia()
+        val newAlarmTime = System.currentTimeMillis() + minutes * 60_000L
+        alarmTime = newAlarmTime
+        sessionManager.snooze(newAlarmTime)
+        scheduleAlarm()
+        notificationManager.notify(NOTIFICATION_ID, buildTrackingNotification())
     }
 
     private fun handleCancel() {

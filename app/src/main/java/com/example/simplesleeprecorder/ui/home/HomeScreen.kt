@@ -121,6 +121,7 @@ fun HomeScreen(
             is HomeUiState.AlarmRinging -> AlarmRingingContent(
                 state = state,
                 onStopAlarm = viewModel::stopAlarm,
+                onSnooze = viewModel::snooze,
             )
             is HomeUiState.SessionEnded -> Box(Modifier.fillMaxSize())
         }
@@ -219,10 +220,12 @@ private fun IdleContent(
 
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.size(8.dp))
                         Column {
@@ -360,6 +363,7 @@ private fun TrackingContent(
 private fun AlarmRingingContent(
     state: HomeUiState.AlarmRinging,
     onStopAlarm: () -> Unit,
+    onSnooze: (Int) -> Unit,
 ) {
     val transition = rememberInfiniteTransition(label = "pulse")
     val scale by transition.animateFloat(
@@ -413,6 +417,23 @@ private fun AlarmRingingContent(
                     Spacer(Modifier.height(4.dp))
                     Text("止める", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
+            }
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        Text(
+            text = "スヌーズ",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = { onSnooze(5) }) {
+                Text("5分")
+            }
+            OutlinedButton(onClick = { onSnooze(10) }) {
+                Text("10分")
             }
         }
     }

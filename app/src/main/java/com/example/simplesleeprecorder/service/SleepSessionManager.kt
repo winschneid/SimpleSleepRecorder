@@ -71,6 +71,20 @@ class SleepSessionManager {
         }
     }
 
+    fun snooze(newAlarmTime: Long) {
+        val current = _state.value
+        if (current is SessionState.AlarmRinging) {
+            _state.value = SessionState.Tracking(
+                startTime = current.startTime,
+                alarmTime = newAlarmTime,
+                audioUri = current.audioUri,
+                currentStage = current.currentStage,
+                elapsedMs = current.elapsedMs,
+                sleepOnsetTime = current.sleepOnsetTime,
+            )
+        }
+    }
+
     fun endSession(sessionId: Long) {
         _state.value = SessionState.SessionEnded(sessionId)
     }
