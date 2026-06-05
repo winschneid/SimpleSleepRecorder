@@ -150,7 +150,13 @@ private fun IdleContent(
             context.contentResolver.takePersistableUriPermission(
                 uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
-            val displayName = uri.lastPathSegment?.substringAfterLast('/') ?: uri.toString()
+            val displayName = context.contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null, null, null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: uri.lastPathSegment ?: uri.toString()
             onAudioSelected(uri.toString(), displayName)
         }
     }
