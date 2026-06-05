@@ -49,6 +49,8 @@ class SleepTrackingService : Service(), SensorEventListener {
 
         private const val WINDOW_MS = 30_000L
         private const val TICKER_MS = 1_000L
+        private const val CHECKPOINT_INTERVAL_MS = 30 * 60 * 1000L
+        private const val ALARM_FADE_DURATION_MS = 30_000L
 
         private const val THRESHOLD_AWAKE = 2.0f
         private const val THRESHOLD_DOZING = 0.5f
@@ -59,6 +61,9 @@ class SleepTrackingService : Service(), SensorEventListener {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var tickerJob: Job? = null
+    private var checkpointJob: Job? = null
+    private var fadeJob: Job? = null
+    private var checkpointSessionId: Long? = null
 
     private lateinit var sensorManager: SensorManager
     private lateinit var notificationManager: NotificationManager
@@ -134,6 +139,16 @@ class SleepTrackingService : Service(), SensorEventListener {
 
         scheduleAlarm()
         startElapsedTicker()
+
+        scope.launch {
+            checkpointSessionId = app.repository.createCheckpoint(sessionStartTime, alarmTime, audioUri)
+        }
+        checkpointJob = scope.launch {
+            while (true) {
+                delay(CHECKPOINT_INTERVAL_MS)
+                saveCheckpoint()
+            }
+        }
     }
 
     private fun handleAlarmTriggered() {
@@ -162,9 +177,18 @@ class SleepTrackingService : Service(), SensorEventListener {
         sensorManager.unregisterListener(this)
         cancelAlarm()
         tickerJob?.cancel()
+        checkpointJob?.cancel()
         releaseWakeLock()
         sessionManager.reset()
-        stopSelf()
+        val idToDelete = checkpointSessionId
+        if (idToDelete != null) {
+            scope.launch {
+                app.repository.deleteSessionById(idToDelete)
+                stopSelf()
+            }
+        } else {
+            stopSelf()
+        }
     }
 
     private fun finishSession() {
@@ -172,8 +196,8 @@ class SleepTrackingService : Service(), SensorEventListener {
         sensorManager.unregisterListener(this)
         cancelAlarm()
         tickerJob?.cancel()
+        checkpointJob?.cancel()
 
-        // Close the current open stage
         if (currentStageStartTime < endTime) {
             stageRecords.add(
                 SleepStageRecord(
@@ -186,19 +210,40 @@ class SleepTrackingService : Service(), SensorEventListener {
         }
 
         scope.launch {
-            val session = SleepSession(
-                startTime = sessionStartTime,
-                endTime = endTime,
-                alarmTime = alarmTime,
-                sleepOnsetTime = sleepOnsetTime,
-                audioUri = audioUri,
-                stageRecords = stageRecords.toList(),
-            )
-            val sessionId = app.repository.saveSession(session)
-            sessionManager.endSession(sessionId)
+            val sessionId = checkpointSessionId
+            if (sessionId != null) {
+                app.repository.updateCheckpoint(
+                    sessionId = sessionId,
+                    endTime = endTime,
+                    sleepOnsetTime = sleepOnsetTime,
+                    stageRecords = stageRecords.toList(),
+                )
+                sessionManager.endSession(sessionId)
+            } else {
+                val session = SleepSession(
+                    startTime = sessionStartTime,
+                    endTime = endTime,
+                    alarmTime = alarmTime,
+                    sleepOnsetTime = sleepOnsetTime,
+                    audioUri = audioUri,
+                    stageRecords = stageRecords.toList(),
+                )
+                val newId = app.repository.saveSession(session)
+                sessionManager.endSession(newId)
+            }
             releaseWakeLock()
             stopSelf()
         }
+    }
+
+    private suspend fun saveCheckpoint() {
+        val id = checkpointSessionId ?: return
+        app.repository.updateCheckpoint(
+            sessionId = id,
+            endTime = System.currentTimeMillis(),
+            sleepOnsetTime = sleepOnsetTime,
+            stageRecords = stageRecords.toList(),
+        )
     }
 
     override fun onSensorChanged(event: SensorEvent) {
@@ -316,11 +361,11 @@ class SleepTrackingService : Service(), SensorEventListener {
                     ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
                 setDataSource(applicationContext, uri)
                 isLooping = true
+                setVolume(0f, 0f)
                 prepare()
                 start()
             }
         } catch (e: Exception) {
-            // Fallback to default alarm if custom audio fails
             try {
                 mediaPlayer = MediaPlayer().apply {
                     setAudioAttributes(
@@ -334,16 +379,33 @@ class SleepTrackingService : Service(), SensorEventListener {
                     )
                     setDataSource(applicationContext, defaultUri)
                     isLooping = true
+                    setVolume(0f, 0f)
                     prepare()
                     start()
                 }
             } catch (ex: Exception) {
-                // Ignore if even default alarm fails
+                return
+            }
+        }
+        startVolumeFade()
+    }
+
+    private fun startVolumeFade() {
+        fadeJob?.cancel()
+        fadeJob = scope.launch {
+            val steps = 20
+            val stepDelay = ALARM_FADE_DURATION_MS / steps
+            for (step in 1..steps) {
+                delay(stepDelay)
+                val volume = step.toFloat() / steps
+                mediaPlayer?.setVolume(volume, volume)
             }
         }
     }
 
     private fun stopAlarmMedia() {
+        fadeJob?.cancel()
+        fadeJob = null
         mediaPlayer?.apply {
             if (isPlaying) stop()
             release()
@@ -434,6 +496,7 @@ class SleepTrackingService : Service(), SensorEventListener {
         sensorManager.unregisterListener(this)
         stopAlarmMedia()
         tickerJob?.cancel()
+        checkpointJob?.cancel()
         releaseWakeLock()
     }
 }

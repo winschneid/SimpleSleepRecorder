@@ -37,6 +37,42 @@ class SleepRepository(private val dao: SleepDao) {
         return sessionId
     }
 
+    suspend fun createCheckpoint(startTime: Long, alarmTime: Long, audioUri: String?): Long =
+        dao.insertSession(
+            SleepSessionEntity(
+                startTime = startTime,
+                endTime = startTime,
+                alarmTime = alarmTime,
+                sleepOnsetTime = null,
+                audioUri = audioUri,
+            )
+        )
+
+    suspend fun updateCheckpoint(
+        sessionId: Long,
+        endTime: Long,
+        sleepOnsetTime: Long?,
+        stageRecords: List<SleepStageRecord>,
+    ) {
+        dao.updateSessionWithStages(
+            sessionId = sessionId,
+            endTime = endTime,
+            sleepOnsetTime = sleepOnsetTime,
+            stages = stageRecords.map { record ->
+                SleepStageRecordEntity(
+                    sessionId = sessionId,
+                    stageType = record.stageType.name,
+                    startTime = record.startTime,
+                    endTime = record.endTime,
+                )
+            },
+        )
+    }
+
+    suspend fun deleteSessionById(sessionId: Long) {
+        dao.deleteSessionById(sessionId)
+    }
+
     suspend fun getSessionById(id: Long): SleepSession? =
         dao.getSessionWithStagesById(id)?.toDomain()
 
