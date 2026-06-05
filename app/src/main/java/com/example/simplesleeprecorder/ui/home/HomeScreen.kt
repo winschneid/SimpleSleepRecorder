@@ -233,7 +233,7 @@ private fun IdleContent(
                             Text("アラーム音")
                             if (state.audioDisplayName != null) {
                                 Text(
-                                    text = state.audioDisplayName,
+                                    text = stripTrackNumber(state.audioDisplayName),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
@@ -525,6 +525,11 @@ private fun AudioPickerDialog(
     }
 }
 
+private val trackNumberRegex = Regex("""^\d+[.\s]\s*""")
+
+private fun stripTrackNumber(name: String): String =
+    trackNumberRegex.replace(name, "").ifEmpty { name }
+
 private data class AudioItem(val uri: String, val displayName: String)
 
 private fun queryAudioFiles(context: android.content.Context): List<AudioItem> {
@@ -548,7 +553,8 @@ private fun queryAudioFiles(context: android.content.Context): List<AudioItem> {
             val title = cursor.getString(titleCol)
             val name = cursor.getString(nameCol)
             val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-            items.add(AudioItem(uri = uri.toString(), displayName = title ?: name ?: "Unknown"))
+            val rawName = title ?: name ?: "Unknown"
+            items.add(AudioItem(uri = uri.toString(), displayName = stripTrackNumber(rawName)))
         }
     }
     return items
