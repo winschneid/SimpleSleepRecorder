@@ -1,16 +1,19 @@
 package com.example.simplesleeprecorder.ui.result
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
@@ -28,12 +31,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.simplesleeprecorder.domain.model.SleepSession
+import com.example.simplesleeprecorder.domain.model.SleepStageType
 import com.example.simplesleeprecorder.ui.theme.DeepSleepColor
 import com.example.simplesleeprecorder.ui.theme.DozingColor
 import com.example.simplesleeprecorder.ui.theme.LightSleepColor
@@ -131,6 +136,10 @@ private fun ResultContent(session: SleepSession, onDone: () -> Unit) {
 
         Spacer(Modifier.height(16.dp))
 
+        SleepTimelineCard(session = session)
+
+        Spacer(Modifier.height(16.dp))
+
         Card(Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
             Column(Modifier.padding(20.dp)) {
                 Text("睡眠ステージ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -215,6 +224,84 @@ private fun SleepStageBar(
             modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+@Composable
+private fun SleepTimelineCard(session: SleepSession) {
+    if (session.stageRecords.isEmpty()) return
+    val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+    val totalMs = (session.endTime - session.startTime).coerceAtLeast(1L)
+
+    Card(Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
+        Column(Modifier.padding(20.dp)) {
+            Text(
+                "睡眠タイムライン",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(32.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+            ) {
+                session.stageRecords.forEach { record ->
+                    val fraction = record.durationMs.toFloat() / totalMs
+                    Box(
+                        modifier = Modifier
+                            .weight(fraction.coerceAtLeast(0.002f))
+                            .fillMaxHeight()
+                            .background(stageColor(record.stageType)),
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    timeFmt.format(Date(session.startTime)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    timeFmt.format(Date(session.endTime)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                LegendItem(Color(0xFFBDBDBD), "起きている")
+                LegendItem(DozingColor, "うとうと")
+                LegendItem(LightSleepColor, "すやすや")
+                LegendItem(DeepSleepColor, "ぐっすり")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegendItem(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .background(color, RoundedCornerShape(2.dp)),
+        )
+        Spacer(Modifier.size(4.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun stageColor(stage: SleepStageType): Color = when (stage) {
+    SleepStageType.AWAKE -> Color(0xFFBDBDBD)
+    SleepStageType.DOZING -> DozingColor
+    SleepStageType.LIGHT -> LightSleepColor
+    SleepStageType.DEEP -> DeepSleepColor
 }
 
 private fun formatDuration(ms: Long): String {
