@@ -157,12 +157,15 @@ private fun SleepSessionCard(session: SleepSession, onDelete: () -> Unit) {
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = formatDuration(session.totalSleepMs),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = formatDuration(session.totalSleepMs),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        ScoreBadge(score = session.sleepScore)
+                    }
                     IconButton(onClick = onDelete) {
                         Icon(Icons.Default.Delete, contentDescription = "削除", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
                     }
@@ -225,6 +228,28 @@ private fun StagePill(
             Text(label, style = MaterialTheme.typography.bodySmall, color = color)
             Text(formatDuration(durationMs), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = color)
         }
+    }
+}
+
+@Composable
+private fun ScoreBadge(score: Int) {
+    val scoreColor = when {
+        score >= 80 -> Color(0xFF43A047)
+        score >= 60 -> Color(0xFF1E88E5)
+        score >= 40 -> Color(0xFFFB8C00)
+        else        -> Color(0xFFE53935)
+    }
+    Box(
+        modifier = Modifier
+            .background(scoreColor.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = "${score}点",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = scoreColor,
+        )
     }
 }
 

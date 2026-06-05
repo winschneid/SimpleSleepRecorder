@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -98,6 +99,10 @@ private fun ResultContent(session: SleepSession, onDone: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(24.dp))
+
+        SleepScoreCard(score = session.sleepScore)
+
+        Spacer(Modifier.height(16.dp))
 
         Card(Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
             Column(Modifier.padding(20.dp)) {
@@ -223,6 +228,57 @@ private fun SleepStageBar(
             textAlign = TextAlign.End,
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+@Composable
+private fun SleepScoreCard(score: Int) {
+    val (scoreColor, scoreLabel) = when {
+        score >= 80 -> Color(0xFF43A047) to "とても良い"
+        score >= 60 -> Color(0xFF1E88E5) to "良い"
+        score >= 40 -> Color(0xFFFB8C00) to "普通"
+        else        -> Color(0xFFE53935) to "改善が必要"
+    }
+
+    Card(Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(2.dp)) {
+        Row(
+            modifier = Modifier.padding(20.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(scoreColor.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "$score",
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = scoreColor,
+                )
+            }
+            Spacer(Modifier.width(20.dp))
+            Column {
+                Text(
+                    text = "睡眠スコア",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = scoreLabel,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = scoreColor,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "深睡眠・睡眠時間・入眠時間から算出",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 

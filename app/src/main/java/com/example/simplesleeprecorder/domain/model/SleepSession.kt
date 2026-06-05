@@ -25,4 +25,18 @@ data class SleepSession(
 
     val sleepOnsetMs: Long?
         get() = sleepOnsetTime?.let { it - startTime }
+
+    val sleepScore: Int
+        get() {
+            if (totalSleepMs <= 0L) return 0
+            // Deep sleep ratio: 20% of total sleep = full 40 pts
+            val deepScore = (deepMs.toFloat() / totalSleepMs / 0.20f).coerceAtMost(1f) * 40f
+            // Duration: 7 hours = full 35 pts
+            val durationScore = (totalSleepMs / (7 * 3_600_000f)).coerceAtMost(1f) * 35f
+            // Sleep onset: ≤15 min = full 25 pts, ≥30 min = 0 pts
+            val onsetScore = sleepOnsetMs?.let { ms ->
+                ((30f - ms / 60_000f) / 15f).coerceIn(0f, 1f) * 25f
+            } ?: 0f
+            return (deepScore + durationScore + onsetScore).toInt().coerceIn(0, 100)
+        }
 }
