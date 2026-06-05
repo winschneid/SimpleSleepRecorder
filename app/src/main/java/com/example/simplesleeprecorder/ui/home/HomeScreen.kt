@@ -1,10 +1,10 @@
 package com.example.simplesleeprecorder.ui.home
 
 import android.Manifest
-import android.content.Intent
+import android.content.ContentUris
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -14,6 +14,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,8 +23,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
@@ -35,6 +39,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -46,8 +51,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -144,23 +152,16 @@ private fun IdleContent(
         is24Hour = true,
     )
 
-    val audioPickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(
-                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-            val displayName = context.contentResolver.query(
-                uri,
-                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
-                null, null, null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) else null
-            } ?: uri.lastPathSegment ?: uri.toString()
-            onAudioSelected(uri.toString(), displayName)
-        }
+    var showAudioPicker by remember { mutableStateOf(false) }
+
+    val storagePermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_AUDIO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
     }
+    val storagePermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) showAudioPicker = true }
 
     Column(
         modifier = Modifier
@@ -246,7 +247,11 @@ private fun IdleContent(
                         }
                     }
                     OutlinedButton(onClick = {
-                        audioPickerLauncher.launch(arrayOf("audio/*"))
+                        val granted = ContextCompat.checkSelfPermission(
+                            context, storagePermission
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (granted) showAudioPicker = true
+                        else storagePermLauncher.launch(storagePermission)
                     }) {
                         Text("選択")
                     }
@@ -276,6 +281,16 @@ private fun IdleContent(
                 showTimePicker = false
             },
             onDismiss = { showTimePicker = false },
+        )
+    }
+
+    if (showAudioPicker) {
+        AudioPickerDialog(
+            onAudioSelected = { uri, name ->
+                onAudioSelected(uri, name)
+                showAudioPicker = false
+            },
+            onDismiss = { showAudioPicker = false },
         )
     }
 }
@@ -437,6 +452,106 @@ private fun AlarmRingingContent(
             }
         }
     }
+}
+
+@Composable
+private fun AudioPickerDialog(
+    onAudioSelected: (String?, String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val audioFiles by produceState<List<AudioItem>>(emptyList()) {
+        value = withContext(Dispatchers.IO) { queryAudioFiles(context) }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
+            Column {
+                Text(
+                    "アラーム音を選択",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                HorizontalDivider()
+                LazyColumn {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onAudioSelected(null, null) }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.size(12.dp))
+                            Text("デフォルト（システムアラーム）", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        HorizontalDivider()
+                    }
+                    if (audioFiles.isEmpty()) {
+                        item {
+                            Text(
+                                "音楽ファイルが見つかりません",
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        items(audioFiles) { audio ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onAudioSelected(audio.uri, audio.displayName) }
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(Modifier.size(12.dp))
+                                Text(audio.displayName, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class AudioItem(val uri: String, val displayName: String)
+
+private fun queryAudioFiles(context: android.content.Context): List<AudioItem> {
+    val items = mutableListOf<AudioItem>()
+    val projection = arrayOf(
+        MediaStore.Audio.Media._ID,
+        MediaStore.Audio.Media.TITLE,
+        MediaStore.Audio.Media.DISPLAY_NAME,
+    )
+    context.contentResolver.query(
+        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        null, null,
+        "${MediaStore.Audio.Media.TITLE} ASC",
+    )?.use { cursor ->
+        val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+        val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+        val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+        while (cursor.moveToNext()) {
+            val id = cursor.getLong(idCol)
+            val title = cursor.getString(titleCol)
+            val name = cursor.getString(nameCol)
+            val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+            items.add(AudioItem(uri = uri.toString(), displayName = title ?: name ?: "Unknown"))
+        }
+    }
+    return items
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
