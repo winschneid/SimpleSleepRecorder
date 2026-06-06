@@ -350,45 +350,54 @@ class SleepTrackingService : Service(), SensorEventListener {
     }
 
     private fun startAlarmMedia() {
+        val uri = audioUri?.let { Uri.parse(it) }
+            ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
+        prepareMediaPlayer(uri, isRetry = false)
+    }
+
+    private fun prepareMediaPlayer(uri: android.net.Uri, isRetry: Boolean) {
+        val player = MediaPlayer()
+        player.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+        )
         try {
-            mediaPlayer = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                val uri = audioUri?.let { Uri.parse(it) }
-                    ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
-                setDataSource(applicationContext, uri)
-                isLooping = true
-                setVolume(0f, 0f)
-                prepare()
-                start()
-            }
+            player.setDataSource(applicationContext, uri)
         } catch (e: Exception) {
-            try {
-                mediaPlayer = MediaPlayer().apply {
-                    setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ALARM)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build()
-                    )
-                    val defaultUri = android.media.RingtoneManager.getDefaultUri(
-                        android.media.RingtoneManager.TYPE_ALARM
-                    )
-                    setDataSource(applicationContext, defaultUri)
-                    isLooping = true
-                    setVolume(0f, 0f)
-                    prepare()
-                    start()
-                }
-            } catch (ex: Exception) {
-                return
+            player.release()
+            if (!isRetry) {
+                val fallback = android.media.RingtoneManager.getDefaultUri(
+                    android.media.RingtoneManager.TYPE_ALARM
+                )
+                prepareMediaPlayer(fallback, isRetry = true)
+            }
+            return
+        }
+        player.isLooping = true
+        player.setVolume(0f, 0f)
+        player.setOnPreparedListener { mp ->
+            if (mediaPlayer === mp) {
+                mp.start()
+                startVolumeFade()
+            } else {
+                mp.release()
             }
         }
-        startVolumeFade()
+        player.setOnErrorListener { mp, _, _ ->
+            if (mediaPlayer === mp) mediaPlayer = null
+            mp.release()
+            if (!isRetry) {
+                val fallback = android.media.RingtoneManager.getDefaultUri(
+                    android.media.RingtoneManager.TYPE_ALARM
+                )
+                prepareMediaPlayer(fallback, isRetry = true)
+            }
+            true
+        }
+        mediaPlayer = player
+        player.prepareAsync()
     }
 
     private fun startVolumeFade() {
@@ -407,11 +416,12 @@ class SleepTrackingService : Service(), SensorEventListener {
     private fun stopAlarmMedia() {
         fadeJob?.cancel()
         fadeJob = null
-        mediaPlayer?.apply {
+        val mp = mediaPlayer
+        mediaPlayer = null
+        mp?.apply {
             if (isPlaying) stop()
             release()
         }
-        mediaPlayer = null
     }
 
     private fun acquireWakeLock() {
