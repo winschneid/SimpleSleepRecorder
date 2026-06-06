@@ -28,6 +28,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.sqrt
 
 class SleepTrackingService : Service(), SensorEventListener {
@@ -80,7 +81,7 @@ class SleepTrackingService : Service(), SensorEventListener {
 
     private val magnitudeSamples = mutableListOf<Float>()
     private var windowStartTime = 0L
-    private val stageRecords = mutableListOf<SleepStageRecord>()
+    private val stageRecords = CopyOnWriteArrayList<SleepStageRecord>()
     private var currentStage = SleepStageType.AWAKE
     private var currentStageStartTime = 0L
     private var sleepOnsetTime: Long? = null
