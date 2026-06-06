@@ -38,7 +38,7 @@ class SleepTrackingService : Service(), SensorEventListener {
         const val ACTION_START = "ACTION_START"
         const val ACTION_STOP_ALARM = "ACTION_STOP_ALARM"
         const val ACTION_SNOOZE = "ACTION_SNOOZE"
-        const val ACTION_CANCEL = "ACTION_CANCEL"
+        const val ACTION_FINISH = "ACTION_FINISH"
         const val ACTION_ALARM_TRIGGERED = "ACTION_ALARM_TRIGGERED"
 
         const val EXTRA_ALARM_TIME = "EXTRA_ALARM_TIME"
@@ -111,7 +111,7 @@ class SleepTrackingService : Service(), SensorEventListener {
                 val minutes = intent.getIntExtra(EXTRA_SNOOZE_MINUTES, 5)
                 handleSnooze(minutes)
             }
-            ACTION_CANCEL -> handleCancel()
+            ACTION_FINISH -> handleStopAlarm()
         }
         return START_REDELIVER_INTENT
     }
@@ -179,25 +179,6 @@ class SleepTrackingService : Service(), SensorEventListener {
         sessionManager.snooze(newAlarmTime)
         scheduleAlarm()
         notificationManager.notify(NOTIFICATION_ID, buildTrackingNotification())
-    }
-
-    private fun handleCancel() {
-        stopAlarmMedia()
-        sensorManager.unregisterListener(this)
-        cancelAlarm()
-        tickerJob?.cancel()
-        checkpointJob?.cancel()
-        releaseWakeLock()
-        sessionManager.reset()
-        val idToDelete = checkpointSessionId
-        if (idToDelete != null) {
-            scope.launch {
-                app.repository.deleteSessionById(idToDelete)
-                stopSelf()
-            }
-        } else {
-            stopSelf()
-        }
     }
 
     private fun finishSession() {

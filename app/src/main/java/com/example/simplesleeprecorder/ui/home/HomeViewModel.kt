@@ -127,9 +127,9 @@ class HomeViewModel(
         app.startService(intent)
     }
 
-    fun cancelTracking() {
+    fun finishTracking() {
         val intent = Intent(app, SleepTrackingService::class.java).apply {
-            action = SleepTrackingService.ACTION_CANCEL
+            action = SleepTrackingService.ACTION_FINISH
         }
         app.startService(intent)
     }

@@ -143,7 +143,7 @@ fun HomeScreen(
             )
             is HomeUiState.Tracking -> TrackingContent(
                 state = state,
-                onCancel = viewModel::cancelTracking,
+                onFinish = viewModel::finishTracking,
             )
             is HomeUiState.AlarmRinging -> AlarmRingingContent(
                 state = state,
@@ -322,7 +322,7 @@ private fun IdleContent(
 @Composable
 private fun TrackingContent(
     state: HomeUiState.Tracking,
-    onCancel: () -> Unit,
+    onFinish: () -> Unit,
 ) {
     val stageBgColor = when (state.currentStage) {
         SleepStageType.AWAKE -> MaterialTheme.colorScheme.surface
@@ -386,14 +386,14 @@ private fun TrackingContent(
         Spacer(Modifier.height(48.dp))
 
         OutlinedButton(
-            onClick = onCancel,
+            onClick = onFinish,
             colors = ButtonDefaults.outlinedButtonColors(
                 contentColor = MaterialTheme.colorScheme.error,
             ),
         ) {
             Icon(Icons.Default.Stop, contentDescription = null)
             Spacer(Modifier.size(8.dp))
-            Text("計測をキャンセル")
+            Text("計測を終了")
         }
     }
 }
