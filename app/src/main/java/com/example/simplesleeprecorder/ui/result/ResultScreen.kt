@@ -94,7 +94,7 @@ private fun ResultContent(session: SleepSession, onDone: () -> Unit) {
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()).format(Date(session.startTime)),
+            text = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()).format(Date(session.sleepDateMillis)),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -26,6 +26,18 @@ data class SleepSession(
     val sleepOnsetMs: Long?
         get() = sleepOnsetTime?.let { it - startTime }
 
+    /**
+     * 「睡眠日」を表す時刻。6時より前に計測を開始した記録は前日扱いとなる。
+     * 表示側で日付（yyyy/MM/dd）へ整形して使う。
+     */
+    val sleepDateMillis: Long
+        get() = startTime - DAY_BOUNDARY_HOUR * 60 * 60 * 1000L
+
+    companion object {
+        /** 日付の境界となる時刻。これより前に計測を開始した記録は前日の記録として扱う。 */
+        const val DAY_BOUNDARY_HOUR = 6
+    }
+
     val sleepScore: Int
         get() {
             if (totalSleepMs <= 0L) return 0
