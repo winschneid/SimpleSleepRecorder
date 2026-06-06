@@ -142,7 +142,7 @@ private fun SleepSessionCard(session: SleepSession, onDelete: () -> Unit) {
             ) {
                 Column {
                     Text(
-                        text = dateFmt.format(Date(session.startTime)),
+                        text = dateFmt.format(Date(session.sleepDateMillis)),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
