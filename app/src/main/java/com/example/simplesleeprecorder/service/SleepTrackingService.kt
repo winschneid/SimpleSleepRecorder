@@ -162,7 +162,14 @@ class SleepTrackingService : Service(), SensorEventListener {
 
     private fun handleStopAlarm() {
         stopAlarmMedia()
-        finishSession()
+        if (sessionStartTime > 0L) {
+            finishSession()
+        } else {
+            // Alarm fired after device reboot — no active session to save
+            cancelAlarm()
+            sessionManager.reset()
+            stopSelf()
+        }
     }
 
     private fun handleSnooze(minutes: Int) {
@@ -342,6 +349,8 @@ class SleepTrackingService : Service(), SensorEventListener {
         } else {
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, alarmTime, pendingIntent)
         }
+        getSharedPreferences(BootReceiver.PREFS_NAME, MODE_PRIVATE)
+            .edit().putLong(BootReceiver.KEY_ACTIVE_ALARM_TIME, alarmTime).apply()
     }
 
     private fun cancelAlarm() {
@@ -352,6 +361,8 @@ class SleepTrackingService : Service(), SensorEventListener {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         alarmManager.cancel(pendingIntent)
+        getSharedPreferences(BootReceiver.PREFS_NAME, MODE_PRIVATE)
+            .edit().remove(BootReceiver.KEY_ACTIVE_ALARM_TIME).apply()
     }
 
     private fun startAlarmMedia() {
