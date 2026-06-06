@@ -97,6 +97,12 @@ fun HomeScreen(
         viewModel.setNotificationPermissionGranted(granted)
     }
 
+    val activityRecognitionPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.setActivityRecognitionPermissionGranted(granted)
+    }
+
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
@@ -108,6 +114,18 @@ fun HomeScreen(
             }
         } else {
             viewModel.setNotificationPermissionGranted(true)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val granted = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACTIVITY_RECOGNITION
+            ) == PackageManager.PERMISSION_GRANTED
+            viewModel.setActivityRecognitionPermissionGranted(granted)
+            if (!granted) {
+                activityRecognitionPermLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+            }
+        } else {
+            viewModel.setActivityRecognitionPermissionGranted(true)
         }
     }
 
@@ -121,6 +139,7 @@ fun HomeScreen(
                 onAlarmTimeSet = viewModel::setAlarmTime,
                 onAudioSelected = { uri, name -> viewModel.setAudioUri(uri, name) },
                 onStartTracking = viewModel::startTracking,
+                activityRecognitionGranted = state.activityRecognitionPermissionGranted,
             )
             is HomeUiState.Tracking -> TrackingContent(
                 state = state,
@@ -143,6 +162,7 @@ private fun IdleContent(
     onAlarmTimeSet: (Int, Int) -> Unit,
     onAudioSelected: (String?, String?) -> Unit,
     onStartTracking: () -> Unit,
+    activityRecognitionGranted: Boolean,
 ) {
     val context = LocalContext.current
     var showTimePicker by remember { mutableStateOf(false) }
@@ -263,13 +283,17 @@ private fun IdleContent(
 
         Button(
             onClick = onStartTracking,
+            enabled = activityRecognitionGranted,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
         ) {
             Icon(Icons.Default.Nightlight, contentDescription = null)
             Spacer(Modifier.size(8.dp))
-            Text("計測開始", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (activityRecognitionGranted) "計測開始" else "パーミッションが必要です",
+                style = MaterialTheme.typography.titleMedium,
+            )
         }
     }
 

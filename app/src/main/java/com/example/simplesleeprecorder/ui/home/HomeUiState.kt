@@ -9,6 +9,7 @@ sealed class HomeUiState {
         val audioUri: String? = null,
         val audioDisplayName: String? = null,
         val notificationPermissionGranted: Boolean = false,
+        val activityRecognitionPermissionGranted: Boolean = false,
     ) : HomeUiState()
 
     data class Tracking(

@@ -25,6 +25,7 @@ class HomeViewModel(
 
     private val dataStore = app.alarmDataStore
     private val notificationPermGranted = MutableStateFlow(false)
+    private val activityRecognitionPermGranted = MutableStateFlow(false)
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Idle())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -35,7 +36,8 @@ class HomeViewModel(
                 sessionManager.state,
                 dataStore.data,
                 notificationPermGranted,
-            ) { sessionState, prefs, permGranted ->
+                activityRecognitionPermGranted,
+            ) { sessionState, prefs, notifGranted, activityGranted ->
                 val hour = prefs[AlarmPreferenceKeys.ALARM_HOUR] ?: 7
                 val minute = prefs[AlarmPreferenceKeys.ALARM_MINUTE] ?: 0
                 val audioUri = prefs[AlarmPreferenceKeys.AUDIO_URI]
@@ -47,7 +49,8 @@ class HomeViewModel(
                         alarmMinute = minute,
                         audioUri = audioUri,
                         audioDisplayName = audioName,
-                        notificationPermissionGranted = permGranted,
+                        notificationPermissionGranted = notifGranted,
+                        activityRecognitionPermissionGranted = activityGranted,
                     )
                     is SleepSessionManager.SessionState.Tracking -> HomeUiState.Tracking(
                         startTime = sessionState.startTime,
@@ -92,6 +95,10 @@ class HomeViewModel(
 
     fun setNotificationPermissionGranted(granted: Boolean) {
         notificationPermGranted.value = granted
+    }
+
+    fun setActivityRecognitionPermissionGranted(granted: Boolean) {
+        activityRecognitionPermGranted.value = granted
     }
 
     fun startTracking() {
