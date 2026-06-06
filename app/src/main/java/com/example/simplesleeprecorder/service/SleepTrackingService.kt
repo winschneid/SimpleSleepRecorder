@@ -113,7 +113,7 @@ class SleepTrackingService : Service(), SensorEventListener {
             }
             ACTION_CANCEL -> handleCancel()
         }
-        return START_STICKY
+        return START_REDELIVER_INTENT
     }
 
     private fun startTracking() {
