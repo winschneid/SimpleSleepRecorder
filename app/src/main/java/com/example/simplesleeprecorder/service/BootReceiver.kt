@@ -34,5 +34,6 @@ class BootReceiver : BroadcastReceiver() {
     companion object {
         const val PREFS_NAME = "sleep_tracking_state"
         const val KEY_ACTIVE_ALARM_TIME = "active_alarm_time_ms"
+        const val KEY_ACTIVE_AUDIO_URI = "active_audio_uri"
     }
 }
