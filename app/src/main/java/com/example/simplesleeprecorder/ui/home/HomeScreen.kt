@@ -556,6 +556,16 @@ private fun stripTrackNumber(name: String): String =
 
 private data class AudioItem(val uri: String, val displayName: String)
 
+// MIME types Android's MediaPlayer can decode. Files in other formats (e.g.
+// AIFF, WMA, APE) fail to play and fall back to the default alarm sound, so we
+// hide them from the picker. See developer.android.com/media/platform/supported-formats
+private val PLAYABLE_AUDIO_MIME_TYPES = arrayOf(
+    "audio/mpeg", "audio/mp4", "audio/aac", "audio/x-m4a", "audio/mp4a-latm",
+    "audio/flac", "audio/x-flac", "audio/ogg", "application/ogg", "audio/opus",
+    "audio/wav", "audio/x-wav", "audio/vnd.wave", "audio/3gpp",
+    "audio/amr", "audio/amr-wb", "audio/midi", "audio/x-midi",
+)
+
 private fun queryAudioFiles(context: android.content.Context): List<AudioItem> {
     val items = mutableListOf<AudioItem>()
     val projection = arrayOf(
@@ -563,10 +573,12 @@ private fun queryAudioFiles(context: android.content.Context): List<AudioItem> {
         MediaStore.Audio.Media.TITLE,
         MediaStore.Audio.Media.DISPLAY_NAME,
     )
+    val placeholders = PLAYABLE_AUDIO_MIME_TYPES.joinToString(",") { "?" }
+    val selection = "${MediaStore.Audio.Media.MIME_TYPE} IN ($placeholders)"
     context.contentResolver.query(
         MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
         projection,
-        null, null,
+        selection, PLAYABLE_AUDIO_MIME_TYPES,
         "${MediaStore.Audio.Media.TITLE} ASC",
     )?.use { cursor ->
         val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)

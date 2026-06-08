@@ -17,6 +17,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.simplesleeprecorder.MainActivity
 import com.example.simplesleeprecorder.SimpleSleepRecorderApp
@@ -35,6 +36,7 @@ import kotlin.math.sqrt
 class SleepTrackingService : Service(), SensorEventListener {
 
     companion object {
+        private const val TAG = "SleepAlarm"
         const val ACTION_START = "ACTION_START"
         const val ACTION_STOP_ALARM = "ACTION_STOP_ALARM"
         const val ACTION_SNOOZE = "ACTION_SNOOZE"
@@ -46,13 +48,18 @@ class SleepTrackingService : Service(), SensorEventListener {
         const val EXTRA_SNOOZE_MINUTES = "EXTRA_SNOOZE_MINUTES"
 
         const val CHANNEL_ID_TRACKING = "SLEEP_TRACKING"
-        const val CHANNEL_ID_ALARM = "SLEEP_ALARM"
+        // Bumped from "SLEEP_ALARM": channel settings are immutable once created,
+        // so a new id is needed for the silent-channel change to take effect on
+        // existing installs (we drive the alarm sound ourselves via MediaPlayer).
+        const val CHANNEL_ID_ALARM = "SLEEP_ALARM_V2"
+        private const val LEGACY_CHANNEL_ID_ALARM = "SLEEP_ALARM"
         const val NOTIFICATION_ID = 1001
 
         private const val WINDOW_MS = 30_000L
         private const val TICKER_MS = 1_000L
         private const val CHECKPOINT_INTERVAL_MS = 30 * 60 * 1000L
         private const val ALARM_FADE_DURATION_MS = 30_000L
+        private const val ALARM_FADE_START_VOLUME = 0.15f
 
         private const val THRESHOLD_AWAKE = 2.0f
         private const val THRESHOLD_DOZING = 0.5f
@@ -375,6 +382,7 @@ class SleepTrackingService : Service(), SensorEventListener {
         try {
             player.setDataSource(applicationContext, uri)
         } catch (e: Exception) {
+            Log.e(TAG, "setDataSource failed for uri=$uri isRetry=$isRetry", e)
             player.release()
             if (!isRetry) {
                 val fallback = android.media.RingtoneManager.getDefaultUri(
@@ -385,7 +393,7 @@ class SleepTrackingService : Service(), SensorEventListener {
             return
         }
         player.isLooping = true
-        player.setVolume(0f, 0f)
+        player.setVolume(ALARM_FADE_START_VOLUME, ALARM_FADE_START_VOLUME)
         player.setOnPreparedListener { mp ->
             if (mediaPlayer === mp) {
                 mp.start()
@@ -394,7 +402,8 @@ class SleepTrackingService : Service(), SensorEventListener {
                 mp.release()
             }
         }
-        player.setOnErrorListener { mp, _, _ ->
+        player.setOnErrorListener { mp, what, extra ->
+            Log.e(TAG, "MediaPlayer onError what=$what extra=$extra uri=$uri isRetry=$isRetry")
             if (mediaPlayer === mp) mediaPlayer = null
             mp.release()
             if (!isRetry) {
@@ -416,7 +425,10 @@ class SleepTrackingService : Service(), SensorEventListener {
             val stepDelay = ALARM_FADE_DURATION_MS / steps
             for (step in 1..steps) {
                 delay(stepDelay)
-                val volume = step.toFloat() / steps
+                // Ramp from the audible start floor up to full volume so the
+                // chosen track is recognizable immediately yet still gentle.
+                val volume = ALARM_FADE_START_VOLUME +
+                    (1f - ALARM_FADE_START_VOLUME) * (step.toFloat() / steps)
                 mediaPlayer?.setVolume(volume, volume)
             }
         }
@@ -502,8 +514,12 @@ class SleepTrackingService : Service(), SensorEventListener {
         ).apply {
             description = "アラーム通知"
             setBypassDnd(true)
+            // The custom alarm sound is played by MediaPlayer; silence the
+            // channel so it doesn't also play the default notification sound.
+            setSound(null, null)
         }
 
+        notificationManager.deleteNotificationChannel(LEGACY_CHANNEL_ID_ALARM)
         notificationManager.createNotificationChannel(trackingChannel)
         notificationManager.createNotificationChannel(alarmChannel)
     }
