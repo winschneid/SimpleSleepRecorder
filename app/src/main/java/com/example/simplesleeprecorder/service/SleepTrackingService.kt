@@ -154,6 +154,12 @@ class SleepTrackingService : Service(), SensorEventListener {
     }
 
     private fun handleAlarmTriggered() {
+        // The alarm intent carries no audio info, so after a process restart or
+        // device reboot the in-memory uri is null — restore the persisted choice.
+        if (audioUri == null) {
+            audioUri = getSharedPreferences(BootReceiver.PREFS_NAME, MODE_PRIVATE)
+                .getString(BootReceiver.KEY_ACTIVE_AUDIO_URI, null)
+        }
         sessionManager.triggerAlarm()
         stopAlarmMedia()
         startAlarmMedia()
@@ -331,7 +337,10 @@ class SleepTrackingService : Service(), SensorEventListener {
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, alarmTime, pendingIntent)
         }
         getSharedPreferences(BootReceiver.PREFS_NAME, MODE_PRIVATE)
-            .edit().putLong(BootReceiver.KEY_ACTIVE_ALARM_TIME, alarmTime).apply()
+            .edit()
+            .putLong(BootReceiver.KEY_ACTIVE_ALARM_TIME, alarmTime)
+            .putString(BootReceiver.KEY_ACTIVE_AUDIO_URI, audioUri)
+            .apply()
     }
 
     private fun cancelAlarm() {
@@ -343,7 +352,10 @@ class SleepTrackingService : Service(), SensorEventListener {
         )
         alarmManager.cancel(pendingIntent)
         getSharedPreferences(BootReceiver.PREFS_NAME, MODE_PRIVATE)
-            .edit().remove(BootReceiver.KEY_ACTIVE_ALARM_TIME).apply()
+            .edit()
+            .remove(BootReceiver.KEY_ACTIVE_ALARM_TIME)
+            .remove(BootReceiver.KEY_ACTIVE_AUDIO_URI)
+            .apply()
     }
 
     private fun startAlarmMedia() {
