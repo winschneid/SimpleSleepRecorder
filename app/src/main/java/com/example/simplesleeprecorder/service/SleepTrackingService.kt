@@ -71,7 +71,9 @@ class SleepTrackingService : Service(), SensorEventListener {
         // so we don't jump straight to "ぐっすり" the instant movement stops.
         private const val DEEP_ONSET_MS = 12 * 60 * 1000L
 
-        private const val SLEEP_ONSET_CONSECUTIVE_WINDOWS = 2
+        // Sleep onset requires stillness sustained at least this long, so brief
+        // phone handling right after starting isn't mistaken for falling asleep.
+        private const val SLEEP_ONSET_STILL_MS = 5 * 60 * 1000L
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -99,7 +101,6 @@ class SleepTrackingService : Service(), SensorEventListener {
     private var currentStage = SleepStageType.AWAKE
     private var currentStageStartTime = 0L
     private var sleepOnsetTime: Long? = null
-    private var consecutiveNonAwakeWindows = 0
     private var movementBaseline = INITIAL_NOISE_FLOOR
     private var stillRunStartTime: Long? = null
 
@@ -139,7 +140,6 @@ class SleepTrackingService : Service(), SensorEventListener {
         stageRecords.clear()
         magnitudeSamples.clear()
         sleepOnsetTime = null
-        consecutiveNonAwakeWindows = 0
         movementBaseline = INITIAL_NOISE_FLOOR
         stillRunStartTime = null
 
@@ -287,13 +287,13 @@ class SleepTrackingService : Service(), SensorEventListener {
 
         val newStage = classifyStage(activity, now)
 
-        if (newStage != SleepStageType.AWAKE) {
-            consecutiveNonAwakeWindows++
-            if (sleepOnsetTime == null && consecutiveNonAwakeWindows >= SLEEP_ONSET_CONSECUTIVE_WINDOWS) {
-                sleepOnsetTime = currentStageStartTime
-            }
-        } else {
-            consecutiveNonAwakeWindows = 0
+        // Sleep onset = the start of the first still period that lasts long
+        // enough. classifyStage tracks stillRunStartTime (set while quiet, reset
+        // by any DOZING/AWAKE movement), so phone handling at the start resets it
+        // and the recorded onset is when the user actually settled down.
+        val stillRun = stillRunStartTime
+        if (sleepOnsetTime == null && stillRun != null && now - stillRun >= SLEEP_ONSET_STILL_MS) {
+            sleepOnsetTime = stillRun
         }
 
         if (newStage != currentStage) {
