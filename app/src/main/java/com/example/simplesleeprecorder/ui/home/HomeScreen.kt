@@ -38,6 +38,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -53,8 +54,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -484,11 +487,32 @@ private fun AudioPickerDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val audioFiles by produceState<List<AudioItem>>(emptyList()) {
         value = withContext(Dispatchers.IO) { queryAudioFiles(context) }
     }
+    var converting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    fun selectAudio(audio: AudioItem) {
+        if (audio.mimeType in AIFF_MIME_TYPES) {
+            // AIFF can't be played directly; convert it to WAV first.
+            converting = true
+            errorMessage = null
+            scope.launch {
+                val result = runCatching {
+                    withContext(Dispatchers.IO) { convertAiffToWav(context, audio.uri) }
+                }
+                converting = false
+                result.onSuccess { wavUri -> onAudioSelected(wavUri, audio.displayName) }
+                    .onFailure { errorMessage = "この形式は変換できませんでした" }
+            }
+        } else {
+            onAudioSelected(audio.uri, audio.displayName)
+        }
+    }
+
+    Dialog(onDismissRequest = { if (!converting) onDismiss() }) {
         Card(modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
             Column {
                 Text(
@@ -498,49 +522,69 @@ private fun AudioPickerDialog(
                     fontWeight = FontWeight.SemiBold,
                 )
                 HorizontalDivider()
-                LazyColumn {
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onAudioSelected(null, null) }
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.size(12.dp))
-                            Text("デフォルト（システムアラーム）", style = MaterialTheme.typography.bodyMedium)
-                        }
-                        HorizontalDivider()
+                if (converting) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.size(12.dp))
+                        Text("変換中…", style = MaterialTheme.typography.bodyMedium)
                     }
-                    if (audioFiles.isEmpty()) {
+                } else {
+                    errorMessage?.let {
+                        Text(
+                            it,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    LazyColumn {
                         item {
-                            Text(
-                                "音楽ファイルが見つかりません",
-                                modifier = Modifier.padding(16.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else {
-                        items(audioFiles) { audio ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onAudioSelected(audio.uri, audio.displayName) }
+                                    .clickable { onAudioSelected(null, null) }
                                     .padding(horizontal = 16.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(
-                                    Icons.Default.MusicNote,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
+                                Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.size(12.dp))
-                                Text(audio.displayName, style = MaterialTheme.typography.bodyMedium)
+                                Text("デフォルト（システムアラーム）", style = MaterialTheme.typography.bodyMedium)
                             }
                             HorizontalDivider()
+                        }
+                        if (audioFiles.isEmpty()) {
+                            item {
+                                Text(
+                                    "音楽ファイルが見つかりません",
+                                    modifier = Modifier.padding(16.dp),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else {
+                            items(audioFiles) { audio ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectAudio(audio) }
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Spacer(Modifier.size(12.dp))
+                                    Text(audio.displayName, style = MaterialTheme.typography.bodyMedium)
+                                }
+                                HorizontalDivider()
+                            }
                         }
                     }
                 }
@@ -554,17 +598,22 @@ private val trackNumberRegex = Regex("""^\d+[.\s]\s*""")
 private fun stripTrackNumber(name: String): String =
     trackNumberRegex.replace(name, "").ifEmpty { name }
 
-private data class AudioItem(val uri: String, val displayName: String)
+private data class AudioItem(val uri: String, val displayName: String, val mimeType: String)
 
-// MIME types Android's MediaPlayer can decode. Files in other formats (e.g.
-// AIFF, WMA, APE) fail to play and fall back to the default alarm sound, so we
-// hide them from the picker. See developer.android.com/media/platform/supported-formats
+// AIFF can't be played by MediaPlayer directly, but it's uncompressed PCM, so we
+// convert it to WAV on selection (see AiffToWavConverter).
+private val AIFF_MIME_TYPES = setOf("audio/x-aiff", "audio/aiff")
+
+// MIME types we offer in the picker: formats MediaPlayer can decode natively,
+// plus AIFF (converted on selection). Other formats (e.g. WMA, APE) fail to play
+// and fall back to the default alarm sound, so we hide them. See
+// developer.android.com/media/platform/supported-formats
 private val PLAYABLE_AUDIO_MIME_TYPES = arrayOf(
     "audio/mpeg", "audio/mp4", "audio/aac", "audio/x-m4a", "audio/mp4a-latm",
     "audio/flac", "audio/x-flac", "audio/ogg", "application/ogg", "audio/opus",
     "audio/wav", "audio/x-wav", "audio/vnd.wave", "audio/3gpp",
     "audio/amr", "audio/amr-wb", "audio/midi", "audio/x-midi",
-)
+) + AIFF_MIME_TYPES
 
 private fun queryAudioFiles(context: android.content.Context): List<AudioItem> {
     val items = mutableListOf<AudioItem>()
@@ -572,6 +621,7 @@ private fun queryAudioFiles(context: android.content.Context): List<AudioItem> {
         MediaStore.Audio.Media._ID,
         MediaStore.Audio.Media.TITLE,
         MediaStore.Audio.Media.DISPLAY_NAME,
+        MediaStore.Audio.Media.MIME_TYPE,
     )
     val placeholders = PLAYABLE_AUDIO_MIME_TYPES.joinToString(",") { "?" }
     val selection = "${MediaStore.Audio.Media.MIME_TYPE} IN ($placeholders)"
@@ -584,16 +634,33 @@ private fun queryAudioFiles(context: android.content.Context): List<AudioItem> {
         val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
         val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
         val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+        val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
         while (cursor.moveToNext()) {
             val id = cursor.getLong(idCol)
             val title = cursor.getString(titleCol)
             val name = cursor.getString(nameCol)
+            val mime = cursor.getString(mimeCol) ?: ""
             val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
             val rawName = title ?: name ?: "Unknown"
-            items.add(AudioItem(uri = uri.toString(), displayName = stripTrackNumber(rawName)))
+            items.add(AudioItem(uri = uri.toString(), displayName = stripTrackNumber(rawName), mimeType = mime))
         }
     }
     return items
+}
+
+/**
+ * Converts an AIFF file at [sourceUri] to a WAV in the app's cache and returns
+ * its file:// uri (string). Throws if the AIFF is a compressed variant.
+ */
+private fun convertAiffToWav(context: android.content.Context, sourceUri: String): String {
+    val outFile = java.io.File(context.cacheDir, "alarm_sound.wav")
+    context.contentResolver.openInputStream(android.net.Uri.parse(sourceUri)).use { input ->
+        requireNotNull(input) { "Cannot open $sourceUri" }
+        java.io.FileOutputStream(outFile).use { output ->
+            com.example.simplesleeprecorder.audio.AiffToWavConverter.convert(input, output)
+        }
+    }
+    return android.net.Uri.fromFile(outFile).toString()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
