@@ -169,12 +169,6 @@ private fun IdleContent(
 ) {
     val context = LocalContext.current
     var showTimePicker by remember { mutableStateOf(false) }
-    val timePickerState = rememberTimePickerState(
-        initialHour = state.alarmHour,
-        initialMinute = state.alarmMinute,
-        is24Hour = true,
-    )
-
     var showAudioPicker by remember { mutableStateOf(false) }
 
     val storagePermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -301,6 +295,15 @@ private fun IdleContent(
     }
 
     if (showTimePicker) {
+        // Create the state when the dialog opens so it always starts from the
+        // current saved time. (rememberTimePickerState only honours its initial
+        // values on first composition, so a hoisted instance would keep the
+        // 7:00 default captured before DataStore loaded the saved value.)
+        val timePickerState = rememberTimePickerState(
+            initialHour = state.alarmHour,
+            initialMinute = state.alarmMinute,
+            is24Hour = true,
+        )
         TimePickerDialog(
             state = timePickerState,
             onConfirm = {
