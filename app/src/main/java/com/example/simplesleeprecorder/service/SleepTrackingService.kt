@@ -61,11 +61,19 @@ class SleepTrackingService : Service(), SensorEventListener {
         private const val ALARM_FADE_DURATION_MS = 30_000L
         private const val ALARM_FADE_START_VOLUME = 0.15f
 
-        private const val THRESHOLD_AWAKE = 2.0f
-        private const val THRESHOLD_DOZING = 0.5f
-        private const val THRESHOLD_LIGHT = 0.1f
+        // Movement is measured relative to an adaptive noise floor (see
+        // movementBaseline), so these are "how much above the quietest level"
+        // a window must be to count as the given activity. Tunable.
+        private const val INITIAL_NOISE_FLOOR = 0.05f
+        private const val MOVEMENT_AWAKE = 0.6f      // large motion: getting up, handling phone
+        private const val MOVEMENT_RESTLESS = 0.12f  // small motion: turning over, fidgeting
+        // Stillness must persist this long before a window counts as deep sleep,
+        // so we don't jump straight to "ぐっすり" the instant movement stops.
+        private const val DEEP_ONSET_MS = 12 * 60 * 1000L
 
-        private const val SLEEP_ONSET_CONSECUTIVE_WINDOWS = 2
+        // Sleep onset requires stillness sustained at least this long, so brief
+        // phone handling right after starting isn't mistaken for falling asleep.
+        private const val SLEEP_ONSET_STILL_MS = 5 * 60 * 1000L
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -93,7 +101,8 @@ class SleepTrackingService : Service(), SensorEventListener {
     private var currentStage = SleepStageType.AWAKE
     private var currentStageStartTime = 0L
     private var sleepOnsetTime: Long? = null
-    private var consecutiveNonAwakeWindows = 0
+    private var movementBaseline = INITIAL_NOISE_FLOOR
+    private var stillRunStartTime: Long? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -131,7 +140,8 @@ class SleepTrackingService : Service(), SensorEventListener {
         stageRecords.clear()
         magnitudeSamples.clear()
         sleepOnsetTime = null
-        consecutiveNonAwakeWindows = 0
+        movementBaseline = INITIAL_NOISE_FLOOR
+        stillRunStartTime = null
 
         sessionManager.startSession(sessionStartTime, alarmTime, audioUri)
 
@@ -268,15 +278,22 @@ class SleepTrackingService : Service(), SensorEventListener {
     private fun processWindow(now: Long) {
         if (magnitudeSamples.isEmpty()) return
         val stdDev = computeStdDev(magnitudeSamples)
-        val newStage = classifyStage(stdDev)
 
-        if (newStage != SleepStageType.AWAKE) {
-            consecutiveNonAwakeWindows++
-            if (sleepOnsetTime == null && consecutiveNonAwakeWindows >= SLEEP_ONSET_CONSECUTIVE_WINDOWS) {
-                sleepOnsetTime = currentStageStartTime
-            }
-        } else {
-            consecutiveNonAwakeWindows = 0
+        // Adaptive noise floor: the quietest window so far defines "no movement".
+        // Measuring movement relative to it cancels out per-device sensor noise
+        // and placement differences, so a still phone no longer reads as deep.
+        movementBaseline = minOf(movementBaseline, stdDev)
+        val activity = (stdDev - movementBaseline).coerceAtLeast(0f)
+
+        val newStage = classifyStage(activity, now)
+
+        // Sleep onset = the start of the first still period that lasts long
+        // enough. classifyStage tracks stillRunStartTime (set while quiet, reset
+        // by any DOZING/AWAKE movement), so phone handling at the start resets it
+        // and the recorded onset is when the user actually settled down.
+        val stillRun = stillRunStartTime
+        if (sleepOnsetTime == null && stillRun != null && now - stillRun >= SLEEP_ONSET_STILL_MS) {
+            sleepOnsetTime = stillRun
         }
 
         if (newStage != currentStage) {
@@ -306,11 +323,21 @@ class SleepTrackingService : Service(), SensorEventListener {
         return sqrt(variance)
     }
 
-    private fun classifyStage(stdDev: Float): SleepStageType = when {
-        stdDev > THRESHOLD_AWAKE -> SleepStageType.AWAKE
-        stdDev > THRESHOLD_DOZING -> SleepStageType.DOZING
-        stdDev > THRESHOLD_LIGHT -> SleepStageType.LIGHT
-        else -> SleepStageType.DEEP
+    private fun classifyStage(activity: Float, now: Long): SleepStageType = when {
+        activity > MOVEMENT_AWAKE -> {
+            stillRunStartTime = null
+            SleepStageType.AWAKE
+        }
+        activity > MOVEMENT_RESTLESS -> {
+            stillRunStartTime = null
+            SleepStageType.DOZING
+        }
+        else -> {
+            // Quiet window. Deep sleep only after stillness has been sustained;
+            // any movement above resets the run back toward lighter sleep.
+            val runStart = stillRunStartTime ?: now.also { stillRunStartTime = it }
+            if (now - runStart >= DEEP_ONSET_MS) SleepStageType.DEEP else SleepStageType.LIGHT
+        }
     }
 
     private fun startElapsedTicker() {
