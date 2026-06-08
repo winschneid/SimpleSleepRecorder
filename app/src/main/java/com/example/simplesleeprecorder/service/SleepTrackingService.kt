@@ -17,6 +17,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.simplesleeprecorder.MainActivity
 import com.example.simplesleeprecorder.SimpleSleepRecorderApp
@@ -35,6 +36,7 @@ import kotlin.math.sqrt
 class SleepTrackingService : Service(), SensorEventListener {
 
     companion object {
+        private const val TAG = "SleepAlarm"
         const val ACTION_START = "ACTION_START"
         const val ACTION_STOP_ALARM = "ACTION_STOP_ALARM"
         const val ACTION_SNOOZE = "ACTION_SNOOZE"
@@ -380,6 +382,7 @@ class SleepTrackingService : Service(), SensorEventListener {
         try {
             player.setDataSource(applicationContext, uri)
         } catch (e: Exception) {
+            Log.e(TAG, "setDataSource failed for uri=$uri isRetry=$isRetry", e)
             player.release()
             if (!isRetry) {
                 val fallback = android.media.RingtoneManager.getDefaultUri(
@@ -399,7 +402,8 @@ class SleepTrackingService : Service(), SensorEventListener {
                 mp.release()
             }
         }
-        player.setOnErrorListener { mp, _, _ ->
+        player.setOnErrorListener { mp, what, extra ->
+            Log.e(TAG, "MediaPlayer onError what=$what extra=$extra uri=$uri isRetry=$isRetry")
             if (mediaPlayer === mp) mediaPlayer = null
             mp.release()
             if (!isRetry) {
