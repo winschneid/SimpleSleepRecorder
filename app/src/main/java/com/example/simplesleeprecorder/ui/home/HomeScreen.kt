@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material.icons.filled.Stop
@@ -44,6 +45,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TimePickerState
@@ -70,6 +72,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.simplesleeprecorder.domain.SmartAlarmPolicy
 import com.example.simplesleeprecorder.domain.model.SleepStageType
 import com.example.simplesleeprecorder.ui.theme.DeepSleepColor
 import com.example.simplesleeprecorder.ui.theme.DozingColor
@@ -141,6 +144,7 @@ fun HomeScreen(
                 state = state,
                 onAlarmTimeSet = viewModel::setAlarmTime,
                 onAudioSelected = { uri, name -> viewModel.setAudioUri(uri, name) },
+                onSmartAlarmChanged = viewModel::setSmartAlarmEnabled,
                 onStartTracking = viewModel::startTracking,
                 activityRecognitionGranted = state.activityRecognitionPermissionGranted,
             )
@@ -164,6 +168,7 @@ private fun IdleContent(
     state: HomeUiState.Idle,
     onAlarmTimeSet: (Int, Int) -> Unit,
     onAudioSelected: (String?, String?) -> Unit,
+    onSmartAlarmChanged: (Boolean) -> Unit,
     onStartTracking: () -> Unit,
     activityRecognitionGranted: Boolean,
 ) {
@@ -280,6 +285,33 @@ private fun IdleContent(
                         Text("選択")
                     }
                 }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Column {
+                            Text("スマートアラーム")
+                            Text(
+                                text = "設定時刻前${SmartAlarmPolicy.DEFAULT_WINDOW_MS / 60_000}分以内の眠りが浅いタイミングで起こします",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = state.smartAlarmEnabled,
+                        onCheckedChange = onSmartAlarmChanged,
+                    )
+                }
             }
         }
 
@@ -389,12 +421,29 @@ private fun TrackingContent(
 
         Spacer(Modifier.height(16.dp))
 
-        val alarmStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(state.alarmTime))
-        Text(
-            text = "アラーム: $alarmStr",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val alarmStr = timeFmt.format(Date(state.alarmTime))
+        if (state.smartAlarmEnabled) {
+            val windowStartStr = timeFmt.format(
+                Date(state.alarmTime - SmartAlarmPolicy.DEFAULT_WINDOW_MS)
+            )
+            Text(
+                text = "アラーム: $windowStartStr〜$alarmStr",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "眠りが浅いタイミングで鳴ります",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                text = "アラーム: $alarmStr",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         Spacer(Modifier.height(16.dp))
 

@@ -8,6 +8,7 @@ sealed class HomeUiState {
         val alarmMinute: Int = 0,
         val audioUri: String? = null,
         val audioDisplayName: String? = null,
+        val smartAlarmEnabled: Boolean = false,
         val notificationPermissionGranted: Boolean = false,
         val activityRecognitionPermissionGranted: Boolean = false,
     ) : HomeUiState()
@@ -18,6 +19,7 @@ sealed class HomeUiState {
         val currentStage: SleepStageType,
         val elapsedMs: Long,
         val sleepOnsetTime: Long?,
+        val smartAlarmEnabled: Boolean = false,
     ) : HomeUiState()
 
     data class AlarmRinging(

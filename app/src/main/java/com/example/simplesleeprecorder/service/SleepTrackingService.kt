@@ -25,6 +25,7 @@ import androidx.core.app.NotificationCompat
 import com.example.simplesleeprecorder.MainActivity
 import com.example.simplesleeprecorder.SimpleSleepRecorderApp
 import com.example.simplesleeprecorder.domain.SleepStageAnalyzer
+import com.example.simplesleeprecorder.domain.SmartAlarmPolicy
 import com.example.simplesleeprecorder.domain.model.SleepSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +48,7 @@ class SleepTrackingService : Service(), SensorEventListener {
         const val EXTRA_ALARM_TIME = "EXTRA_ALARM_TIME"
         const val EXTRA_AUDIO_URI = "EXTRA_AUDIO_URI"
         const val EXTRA_SNOOZE_MINUTES = "EXTRA_SNOOZE_MINUTES"
+        const val EXTRA_SMART_ALARM = "EXTRA_SMART_ALARM"
 
         const val CHANNEL_ID_TRACKING = "SLEEP_TRACKING"
         // Bumped from "SLEEP_ALARM": channel settings are immutable once created,
@@ -81,6 +83,10 @@ class SleepTrackingService : Service(), SensorEventListener {
     private var sessionStartTime = 0L
     private var alarmTime = 0L
     private var audioUri: String? = null
+
+    // Armed while a smart-alarm session is tracking; disarmed once the alarm
+    // fires (early or on time) so snoozed alarms always ring at the exact time.
+    private var smartAlarmArmed = false
 
     private val magnitudeSamples = mutableListOf<Float>()
     private var windowStartTime = 0L
@@ -124,6 +130,7 @@ class SleepTrackingService : Service(), SensorEventListener {
             ACTION_START -> {
                 alarmTime = intent.getLongExtra(EXTRA_ALARM_TIME, 0L)
                 audioUri = intent.getStringExtra(EXTRA_AUDIO_URI)
+                smartAlarmArmed = intent.getBooleanExtra(EXTRA_SMART_ALARM, false)
                 startTracking()
             }
             ACTION_ALARM_TRIGGERED -> handleAlarmTriggered()
@@ -175,6 +182,7 @@ class SleepTrackingService : Service(), SensorEventListener {
     }
 
     private fun handleAlarmTriggered() {
+        smartAlarmArmed = false
         // The alarm intent carries no audio info, so after a process restart or
         // device reboot the in-memory uri is null — restore the persisted choice.
         if (audioUri == null) {
@@ -283,6 +291,20 @@ class SleepTrackingService : Service(), SensorEventListener {
             elapsedMs = now - sessionStartTime,
             sleepOnsetTime = analyzer.sleepOnsetTime,
         )
+
+        if (smartAlarmArmed &&
+            sessionManager.state.value is SleepSessionManager.SessionState.Tracking &&
+            SmartAlarmPolicy.shouldTriggerEarly(
+                hasSleptThisSession = analyzer.sleepOnsetTime != null,
+                currentStage = analyzer.currentStage,
+                now = now,
+                alarmTime = alarmTime,
+            )
+        ) {
+            Log.i(TAG, "Smart alarm: triggering early in stage ${analyzer.currentStage}")
+            cancelAlarm()
+            handleAlarmTriggered()
+        }
     }
 
     private fun computeStdDev(samples: List<Float>): Float {

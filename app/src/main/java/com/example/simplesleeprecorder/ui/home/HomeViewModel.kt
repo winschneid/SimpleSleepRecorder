@@ -42,6 +42,7 @@ class HomeViewModel(
                 val minute = prefs[AlarmPreferenceKeys.ALARM_MINUTE] ?: 0
                 val audioUri = prefs[AlarmPreferenceKeys.AUDIO_URI]
                 val audioName = prefs[AlarmPreferenceKeys.AUDIO_DISPLAY_NAME]
+                val smartAlarm = prefs[AlarmPreferenceKeys.SMART_ALARM_ENABLED] ?: false
 
                 when (sessionState) {
                     is SleepSessionManager.SessionState.Idle -> HomeUiState.Idle(
@@ -49,6 +50,7 @@ class HomeViewModel(
                         alarmMinute = minute,
                         audioUri = audioUri,
                         audioDisplayName = audioName,
+                        smartAlarmEnabled = smartAlarm,
                         notificationPermissionGranted = notifGranted,
                         activityRecognitionPermissionGranted = activityGranted,
                     )
@@ -58,6 +60,7 @@ class HomeViewModel(
                         currentStage = sessionState.currentStage,
                         elapsedMs = sessionState.elapsedMs,
                         sleepOnsetTime = sessionState.sleepOnsetTime,
+                        smartAlarmEnabled = smartAlarm,
                     )
                     is SleepSessionManager.SessionState.AlarmRinging -> HomeUiState.AlarmRinging(
                         startTime = sessionState.startTime,
@@ -93,6 +96,14 @@ class HomeViewModel(
         }
     }
 
+    fun setSmartAlarmEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            dataStore.edit { prefs ->
+                prefs[AlarmPreferenceKeys.SMART_ALARM_ENABLED] = enabled
+            }
+        }
+    }
+
     fun setNotificationPermissionGranted(granted: Boolean) {
         notificationPermGranted.value = granted
     }
@@ -107,6 +118,7 @@ class HomeViewModel(
         val intent = Intent(app, SleepTrackingService::class.java).apply {
             action = SleepTrackingService.ACTION_START
             putExtra(SleepTrackingService.EXTRA_ALARM_TIME, alarmTime)
+            putExtra(SleepTrackingService.EXTRA_SMART_ALARM, idle.smartAlarmEnabled)
             idle.audioUri?.let { putExtra(SleepTrackingService.EXTRA_AUDIO_URI, it) }
         }
         app.startForegroundService(intent)
