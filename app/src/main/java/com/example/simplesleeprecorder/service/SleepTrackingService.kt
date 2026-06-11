@@ -6,7 +6,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -21,16 +24,14 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.simplesleeprecorder.MainActivity
 import com.example.simplesleeprecorder.SimpleSleepRecorderApp
+import com.example.simplesleeprecorder.domain.SleepStageAnalyzer
 import com.example.simplesleeprecorder.domain.model.SleepSession
-import com.example.simplesleeprecorder.domain.model.SleepStageRecord
-import com.example.simplesleeprecorder.domain.model.SleepStageType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.sqrt
 
 class SleepTrackingService : Service(), SensorEventListener {
@@ -60,12 +61,6 @@ class SleepTrackingService : Service(), SensorEventListener {
         private const val CHECKPOINT_INTERVAL_MS = 30 * 60 * 1000L
         private const val ALARM_FADE_DURATION_MS = 30_000L
         private const val ALARM_FADE_START_VOLUME = 0.15f
-
-        private const val THRESHOLD_AWAKE = 2.0f
-        private const val THRESHOLD_DOZING = 0.5f
-        private const val THRESHOLD_LIGHT = 0.1f
-
-        private const val SLEEP_ONSET_CONSECUTIVE_WINDOWS = 2
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -89,11 +84,26 @@ class SleepTrackingService : Service(), SensorEventListener {
 
     private val magnitudeSamples = mutableListOf<Float>()
     private var windowStartTime = 0L
-    private val stageRecords = CopyOnWriteArrayList<SleepStageRecord>()
-    private var currentStage = SleepStageType.AWAKE
-    private var currentStageStartTime = 0L
-    private var sleepOnsetTime: Long? = null
-    private var consecutiveNonAwakeWindows = 0
+    private val analyzer = SleepStageAnalyzer()
+
+    // Screen-interactive state feeds the analyzer: while the user has the
+    // screen on they are awake no matter how still the phone is.
+    @Volatile
+    private var isScreenInteractive = true
+    @Volatile
+    private var screenOnDuringWindow = true
+
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_ON -> {
+                    isScreenInteractive = true
+                    screenOnDuringWindow = true
+                }
+                Intent.ACTION_SCREEN_OFF -> isScreenInteractive = false
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -102,6 +112,10 @@ class SleepTrackingService : Service(), SensorEventListener {
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        registerReceiver(screenStateReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        })
         createNotificationChannels()
     }
 
@@ -126,12 +140,12 @@ class SleepTrackingService : Service(), SensorEventListener {
     private fun startTracking() {
         sessionStartTime = System.currentTimeMillis()
         windowStartTime = sessionStartTime
-        currentStage = SleepStageType.AWAKE
-        currentStageStartTime = sessionStartTime
-        stageRecords.clear()
         magnitudeSamples.clear()
-        sleepOnsetTime = null
-        consecutiveNonAwakeWindows = 0
+        analyzer.start(sessionStartTime)
+
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        isScreenInteractive = pm.isInteractive
+        screenOnDuringWindow = isScreenInteractive
 
         sessionManager.startSession(sessionStartTime, alarmTime, audioUri)
 
@@ -201,16 +215,7 @@ class SleepTrackingService : Service(), SensorEventListener {
         tickerJob?.cancel()
         checkpointJob?.cancel()
 
-        if (currentStageStartTime < endTime) {
-            stageRecords.add(
-                SleepStageRecord(
-                    sessionId = 0,
-                    stageType = currentStage,
-                    startTime = currentStageStartTime,
-                    endTime = endTime,
-                )
-            )
-        }
+        val finalStageRecords = analyzer.finish(endTime)
 
         scope.launch {
             val sessionId = checkpointSessionId
@@ -218,8 +223,8 @@ class SleepTrackingService : Service(), SensorEventListener {
                 app.repository.updateCheckpoint(
                     sessionId = sessionId,
                     endTime = endTime,
-                    sleepOnsetTime = sleepOnsetTime,
-                    stageRecords = stageRecords.toList(),
+                    sleepOnsetTime = analyzer.sleepOnsetTime,
+                    stageRecords = finalStageRecords,
                 )
                 sessionManager.endSession(sessionId)
             } else {
@@ -227,9 +232,9 @@ class SleepTrackingService : Service(), SensorEventListener {
                     startTime = sessionStartTime,
                     endTime = endTime,
                     alarmTime = alarmTime,
-                    sleepOnsetTime = sleepOnsetTime,
+                    sleepOnsetTime = analyzer.sleepOnsetTime,
                     audioUri = audioUri,
-                    stageRecords = stageRecords.toList(),
+                    stageRecords = finalStageRecords,
                 )
                 val newId = app.repository.saveSession(session)
                 sessionManager.endSession(newId)
@@ -244,8 +249,8 @@ class SleepTrackingService : Service(), SensorEventListener {
         app.repository.updateCheckpoint(
             sessionId = id,
             endTime = System.currentTimeMillis(),
-            sleepOnsetTime = sleepOnsetTime,
-            stageRecords = stageRecords.toList(),
+            sleepOnsetTime = analyzer.sleepOnsetTime,
+            stageRecords = analyzer.stageRecords,
         )
     }
 
@@ -268,34 +273,15 @@ class SleepTrackingService : Service(), SensorEventListener {
     private fun processWindow(now: Long) {
         if (magnitudeSamples.isEmpty()) return
         val stdDev = computeStdDev(magnitudeSamples)
-        val newStage = classifyStage(stdDev)
+        val screenWasOn = screenOnDuringWindow || isScreenInteractive
+        screenOnDuringWindow = isScreenInteractive
 
-        if (newStage != SleepStageType.AWAKE) {
-            consecutiveNonAwakeWindows++
-            if (sleepOnsetTime == null && consecutiveNonAwakeWindows >= SLEEP_ONSET_CONSECUTIVE_WINDOWS) {
-                sleepOnsetTime = currentStageStartTime
-            }
-        } else {
-            consecutiveNonAwakeWindows = 0
-        }
-
-        if (newStage != currentStage) {
-            stageRecords.add(
-                SleepStageRecord(
-                    sessionId = 0,
-                    stageType = currentStage,
-                    startTime = currentStageStartTime,
-                    endTime = now,
-                )
-            )
-            currentStage = newStage
-            currentStageStartTime = now
-        }
+        analyzer.onWindow(stdDev, screenWasOn, now)
 
         sessionManager.updateTracking(
-            currentStage = currentStage,
+            currentStage = analyzer.currentStage,
             elapsedMs = now - sessionStartTime,
-            sleepOnsetTime = sleepOnsetTime,
+            sleepOnsetTime = analyzer.sleepOnsetTime,
         )
     }
 
@@ -306,13 +292,6 @@ class SleepTrackingService : Service(), SensorEventListener {
         return sqrt(variance)
     }
 
-    private fun classifyStage(stdDev: Float): SleepStageType = when {
-        stdDev > THRESHOLD_AWAKE -> SleepStageType.AWAKE
-        stdDev > THRESHOLD_DOZING -> SleepStageType.DOZING
-        stdDev > THRESHOLD_LIGHT -> SleepStageType.LIGHT
-        else -> SleepStageType.DEEP
-    }
-
     private fun startElapsedTicker() {
         tickerJob = scope.launch {
             while (true) {
@@ -321,9 +300,9 @@ class SleepTrackingService : Service(), SensorEventListener {
                 val elapsed = System.currentTimeMillis() - sessionStartTime
                 if (current is SleepSessionManager.SessionState.Tracking) {
                     sessionManager.updateTracking(
-                        currentStage = currentStage,
+                        currentStage = analyzer.currentStage,
                         elapsedMs = elapsed,
-                        sleepOnsetTime = sleepOnsetTime,
+                        sleepOnsetTime = analyzer.sleepOnsetTime,
                     )
                 }
             }
@@ -530,6 +509,7 @@ class SleepTrackingService : Service(), SensorEventListener {
     override fun onDestroy() {
         super.onDestroy()
         sensorManager.unregisterListener(this)
+        unregisterReceiver(screenStateReceiver)
         stopAlarmMedia()
         tickerJob?.cancel()
         checkpointJob?.cancel()
