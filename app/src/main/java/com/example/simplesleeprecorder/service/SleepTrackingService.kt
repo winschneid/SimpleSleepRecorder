@@ -20,6 +20,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.simplesleeprecorder.MainActivity
@@ -59,6 +60,10 @@ class SleepTrackingService : Service(), SensorEventListener {
         const val NOTIFICATION_ID = 1001
 
         private const val WINDOW_MS = 30_000L
+        // Let the sensor hardware FIFO batch events and flush at most once per
+        // window instead of waking the SoC for every ~200ms sample. Staging
+        // only looks at 30s windows, so the added delivery latency is free.
+        private const val SENSOR_BATCH_LATENCY_US = WINDOW_MS.toInt() * 1_000
         private const val TICKER_MS = 1_000L
         private const val CHECKPOINT_INTERVAL_MS = 30 * 60 * 1000L
         private const val ALARM_FADE_DURATION_MS = 30_000L
@@ -165,6 +170,7 @@ class SleepTrackingService : Service(), SensorEventListener {
             this,
             accelerometer,
             SensorManager.SENSOR_DELAY_NORMAL,
+            SENSOR_BATCH_LATENCY_US,
         )
 
         scheduleAlarm()
@@ -270,11 +276,15 @@ class SleepTrackingService : Service(), SensorEventListener {
         val magnitude = sqrt(x * x + y * y + z * z)
         magnitudeSamples.add(magnitude)
 
-        val now = System.currentTimeMillis()
-        if (now - windowStartTime >= WINDOW_MS) {
-            processWindow(now)
+        // Batched events arrive in bursts up to WINDOW_MS after the fact, so
+        // window boundaries must come from the event's own timestamp (ns since
+        // boot), not the delivery time.
+        val eventTimeMs = System.currentTimeMillis() -
+            (SystemClock.elapsedRealtimeNanos() - event.timestamp) / 1_000_000L
+        if (eventTimeMs - windowStartTime >= WINDOW_MS) {
+            processWindow(eventTimeMs)
             magnitudeSamples.clear()
-            windowStartTime = now
+            windowStartTime = eventTimeMs
         }
     }
 
