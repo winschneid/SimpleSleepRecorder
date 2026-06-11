@@ -125,6 +125,24 @@ private fun ResultContent(session: SleepSession, onDone: () -> Unit) {
                         value = formatDuration(totalSleepMs),
                     )
                 }
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    TimeStatItem(
+                        icon = null,
+                        label = "中途覚醒",
+                        value = "${session.awakeningsCount}回",
+                    )
+                    TimeStatItem(
+                        icon = null,
+                        label = "覚醒時間",
+                        value = formatDuration(session.midSleepAwakeMs),
+                    )
+                    TimeStatItem(
+                        icon = null,
+                        label = "睡眠効率",
+                        value = "${session.sleepEfficiencyPercent}%",
+                    )
+                }
                 val sleepOnsetMs = session.sleepOnsetMs
                 if (sleepOnsetMs != null) {
                     Spacer(Modifier.height(12.dp))

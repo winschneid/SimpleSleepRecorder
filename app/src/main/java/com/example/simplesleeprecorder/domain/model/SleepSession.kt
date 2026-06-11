@@ -27,6 +27,31 @@ data class SleepSession(
         get() = sleepOnsetTime?.let { it - startTime }
 
     /**
+     * 中途覚醒: 睡眠と睡眠に挟まれた AWAKE 区間。先頭（寝付くまで）と
+     * 末尾（起床後）の AWAKE 区間は含まない。
+     */
+    val midSleepAwakeRecords: List<SleepStageRecord>
+        get() = stageRecords.filterIndexed { index, record ->
+            record.stageType == SleepStageType.AWAKE &&
+                index > 0 && index < stageRecords.lastIndex
+        }
+
+    val awakeningsCount: Int
+        get() = midSleepAwakeRecords.size
+
+    val midSleepAwakeMs: Long
+        get() = midSleepAwakeRecords.sumOf { it.durationMs }
+
+    val timeInBedMs: Long
+        get() = endTime - startTime
+
+    /** 睡眠効率: 就床時間に対する睡眠時間の割合（%）。 */
+    val sleepEfficiencyPercent: Int
+        get() = if (timeInBedMs > 0) {
+            (totalSleepMs * 100 / timeInBedMs).toInt().coerceIn(0, 100)
+        } else 0
+
+    /**
      * 「睡眠日」を表す時刻。6時より前に計測を開始した記録は前日扱いとなる。
      * 表示側で日付（yyyy/MM/dd）へ整形して使う。
      */
@@ -48,7 +73,14 @@ data class SleepSession(
             // Sleep onset: ≤15 min = full 25 pts, ≥30 min = 0 pts
             val onsetScore = sleepOnsetMs?.let { ms ->
                 ((30f - ms / 60_000f) / 15f).coerceIn(0f, 1f) * 25f
-            } ?: 0f
-            return (deepScore + durationScore + onsetScore).toInt().coerceIn(0, 100)
+            }
+            // When onset wasn't detected, grade on the remaining components
+            // instead of silently scoring the missing one as zero.
+            val score = if (onsetScore != null) {
+                deepScore + durationScore + onsetScore
+            } else {
+                (deepScore + durationScore) * 100f / 75f
+            }
+            return score.toInt().coerceIn(0, 100)
         }
 }
