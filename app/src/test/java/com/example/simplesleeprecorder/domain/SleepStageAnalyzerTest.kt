@@ -100,6 +100,46 @@ class SleepStageAnalyzerTest {
     }
 
     @Test
+    fun `low sleep api confidence forces awake despite stillness`() {
+        val analyzer = newAnalyzer(onsetWindows = 2)
+        var end = startTime + windowMs
+        repeat(5) {
+            analyzer.onWindow(stdDev = 0.01f, screenWasOn = false, windowEnd = end, sleepApiConfidence = 10)
+            end += windowMs
+        }
+        assertEquals(SleepStageType.AWAKE, analyzer.currentStage)
+        assertNull(analyzer.sleepOnsetTime)
+    }
+
+    @Test
+    fun `high sleep api confidence keeps a motion spike from resetting the onset run`() {
+        val analyzer = newAnalyzer(onsetWindows = 20)
+        val end = analyzer.feedWindows(10, stdDev = 0.05f)
+        // Turning over mid-sleep: motion says AWAKE, the Sleep API is confident
+        // the user is asleep, so the still run continues as DOZING.
+        analyzer.onWindow(stdDev = 3.0f, screenWasOn = false, windowEnd = end + windowMs, sleepApiConfidence = 90)
+        assertEquals(SleepStageType.DOZING, analyzer.currentStage)
+        analyzer.feedWindows(9, stdDev = 0.05f, firstWindowEnd = end + 2 * windowMs)
+        assertEquals(startTime, analyzer.sleepOnsetTime)
+    }
+
+    @Test
+    fun `mid sleep api confidence leaves motion classification unchanged`() {
+        val analyzer = newAnalyzer()
+        analyzer.onWindow(stdDev = 0.05f, screenWasOn = false, windowEnd = startTime + windowMs, sleepApiConfidence = 50)
+        assertEquals(SleepStageType.DEEP, analyzer.currentStage)
+        analyzer.onWindow(stdDev = 3.0f, screenWasOn = false, windowEnd = startTime + 2 * windowMs, sleepApiConfidence = 50)
+        assertEquals(SleepStageType.AWAKE, analyzer.currentStage)
+    }
+
+    @Test
+    fun `screen on overrides a confident asleep classification`() {
+        val analyzer = newAnalyzer()
+        analyzer.onWindow(stdDev = 0.01f, screenWasOn = true, windowEnd = startTime + windowMs, sleepApiConfidence = 95)
+        assertEquals(SleepStageType.AWAKE, analyzer.currentStage)
+    }
+
+    @Test
     fun `records stage transitions and finish closes the last stage`() {
         val analyzer = newAnalyzer()
         var end = startTime + windowMs
