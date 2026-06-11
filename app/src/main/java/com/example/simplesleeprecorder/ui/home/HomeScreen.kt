@@ -206,6 +206,13 @@ private fun IdleContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "計測中はスマホを枕元のマットレスの上に置いてください",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
         Spacer(Modifier.height(40.dp))
 
         Card(
@@ -387,6 +394,15 @@ private fun TrackingContent(
             text = "アラーム: $alarmStr",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            text = "スマホを枕元に置いて画面を消してください\n（画面が点いている間は「起きている」として記録されます）",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
         )
 
         Spacer(Modifier.height(48.dp))
