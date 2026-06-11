@@ -28,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.simplesleeprecorder.domain.SleepStatsCalculator
 import com.example.simplesleeprecorder.domain.model.SleepSession
 import com.example.simplesleeprecorder.domain.model.SleepStageType
 import com.example.simplesleeprecorder.ui.theme.DeepSleepColor
@@ -63,6 +65,9 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
             if (state.sessions.isEmpty()) {
                 EmptyHistory()
             } else {
+                val stats = remember(state.sessions) {
+                    SleepStatsCalculator.forLastDays(state.sessions)
+                }
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -70,6 +75,9 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     item { Spacer(Modifier.height(8.dp)) }
+                    if (stats != null) {
+                        item { WeeklyStatsCard(stats) }
+                    }
                     items(state.sessions, key = { it.id }) { session ->
                         SleepSessionCard(
                             session = session,
@@ -97,6 +105,99 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
                 TextButton(onClick = { deleteTargetId = null }) { Text("キャンセル") }
             },
         )
+    }
+}
+
+@Composable
+private fun WeeklyStatsCard(stats: SleepStatsCalculator.Stats) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(2.dp),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "直近7日間",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                StatItem("平均睡眠時間", formatDuration(stats.averageSleepMs))
+                StatItem("平均スコア", "${stats.averageScore}点")
+                StatItem("平均入眠時間", stats.averageOnsetMs?.let { formatDuration(it) } ?: "--")
+            }
+            Spacer(Modifier.height(16.dp))
+            DailySleepBarChart(stats.dailySleep)
+        }
+    }
+}
+
+@Composable
+private fun StatItem(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun DailySleepBarChart(dailySleep: List<SleepStatsCalculator.DailySleep>) {
+    val barAreaHeight = 80.dp
+    // Scale against at least 8h so a normal night doesn't always fill the chart.
+    val maxMs = maxOf(dailySleep.maxOf { it.totalSleepMs }, 8 * 3_600_000L)
+    val dayFmt = SimpleDateFormat("E", Locale.JAPANESE)
+    val barColor = MaterialTheme.colorScheme.primary
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        dailySleep.forEach { day ->
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(barAreaHeight),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    if (day.totalSleepMs > 0) {
+                        val fraction = (day.totalSleepMs.toFloat() / maxMs).coerceIn(0.04f, 1f)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 3.dp)
+                                .height(barAreaHeight * fraction)
+                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                .background(barColor.copy(alpha = 0.75f)),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = dayFmt.format(Date(day.dayStartMillis)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = if (day.totalSleepMs > 0) {
+                        "%.1f".format(day.totalSleepMs / 3_600_000f)
+                    } else "-",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
