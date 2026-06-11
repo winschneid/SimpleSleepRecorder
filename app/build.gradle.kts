@@ -56,6 +56,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.play.services.location)
     ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)

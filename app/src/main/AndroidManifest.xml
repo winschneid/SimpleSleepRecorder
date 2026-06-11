@@ -49,6 +49,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".service.SleepClassifyReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".service.BootReceiver"
             android:exported="true">
             <intent-filter>

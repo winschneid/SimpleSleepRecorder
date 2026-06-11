@@ -30,6 +30,13 @@ class SleepStageAnalyzer(
 
         /** 20 windows x 30s = 10 minutes of sustained stillness. */
         const val ONSET_CONSECUTIVE_WINDOWS = 20
+
+        // Sleep API confidence (0-100) fusion thresholds. Only the confident
+        // extremes override motion staging; in between, motion decides.
+        /** At or below this confidence the user is treated as awake. */
+        const val SLEEP_API_AWAKE_MAX_CONFIDENCE = 25
+        /** At or above this confidence a motion-AWAKE window stays asleep. */
+        const val SLEEP_API_ASLEEP_MIN_CONFIDENCE = 75
     }
 
     private val records = CopyOnWriteArrayList<SleepStageRecord>()
@@ -65,9 +72,30 @@ class SleepStageAnalyzer(
      * previous one ended). [screenWasOn] marks that the screen was interactive
      * at some point during the window — the user was using the phone, so they
      * were awake no matter how still the device was.
+     *
+     * [sleepApiConfidence] is the latest fresh Sleep API confidence (0-100)
+     * from Google's on-device model (motion + ambient light), or null when
+     * unavailable. It corrects the two cases motion alone gets wrong: lying
+     * still while awake (e.g. phone parked on the nightstand while the user
+     * reads) and brief movement while asleep (turning over).
      */
-    fun onWindow(stdDev: Float, screenWasOn: Boolean, windowEnd: Long) {
-        val newStage = if (screenWasOn) SleepStageType.AWAKE else classify(stdDev)
+    fun onWindow(
+        stdDev: Float,
+        screenWasOn: Boolean,
+        windowEnd: Long,
+        sleepApiConfidence: Int? = null,
+    ) {
+        val motionStage = classify(stdDev)
+        val newStage = when {
+            // User interaction trumps everything, including the Sleep API.
+            screenWasOn -> SleepStageType.AWAKE
+            sleepApiConfidence != null &&
+                sleepApiConfidence <= SLEEP_API_AWAKE_MAX_CONFIDENCE -> SleepStageType.AWAKE
+            motionStage == SleepStageType.AWAKE &&
+                sleepApiConfidence != null &&
+                sleepApiConfidence >= SLEEP_API_ASLEEP_MIN_CONFIDENCE -> SleepStageType.DOZING
+            else -> motionStage
+        }
 
         if (newStage != SleepStageType.AWAKE) {
             if (consecutiveStillWindows == 0) {
